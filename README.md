@@ -32,6 +32,8 @@ QuitOnClose uses the Accessibility API to follow the windows of every app in the
 Requires macOS 13 or later and the Xcode Command Line Tools (`xcode-select --install`).
 
 ```bash
+git clone https://github.com/Veehementia/QuitOnClose.git
+cd QuitOnClose
 ./scripts/install.sh
 ```
 
