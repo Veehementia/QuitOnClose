@@ -1,0 +1,20 @@
+/* Status menu */
+"QuitOnClose needs Accessibility access" = "QuitOnClose richiede l'accesso Accessibilità";
+"Allow in System Settings…" = "Consenti in Impostazioni di Sistema…";
+"Quit Apps When Their Last Window Closes" = "Esci dalle app quando chiudi l'ultima finestra";
+"Exclude “%@”" = "Escludi “%@”";
+"Excluded Apps…" = "App escluse…";
+"Recently Quit" = "Uscite di recente";
+"Check an app to exclude it." = "Seleziona un'app per escluderla.";
+"Open at Login" = "Apri al login";
+"Quit QuitOnClose" = "Esci da QuitOnClose";
+"Close" = "Chiudi";
+
+/* Excluded apps window */
+"Excluded Apps" = "App escluse";
+"These apps keep running after you close their last window. Finder always does." = "Queste app restano aperte quando ne chiudi l'ultima finestra, come fa sempre il Finder.";
+"No excluded apps" = "Nessuna app esclusa";
+"Add an App" = "Aggiungi un'app";
+"Remove the Selected Apps" = "Rimuovi le app selezionate";
+"Choose an App…" = "Scegli un'app…";
+"Exclude" = "Escludi";
