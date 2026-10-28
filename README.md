@@ -37,7 +37,7 @@ cd QuitOnClose
 ./scripts/install.sh
 ```
 
-The script builds the app, copies it to `/Applications` and opens it. QuitOnClose then asks for Accessibility access: turn it on in System Settings → Privacy & Security → Accessibility. It starts working within a couple of seconds, with no relaunch needed.
+The script builds the app, moves it to `/Applications` and opens it. QuitOnClose then asks for Accessibility access: turn it on in System Settings → Privacy & Security → Accessibility. It starts working within a couple of seconds, with no relaunch needed.
 
 The app is signed ad-hoc, so macOS treats every new build as a different app. The install script clears the old Accessibility permission each time, and you allow the new build again. To avoid this, sign with your own certificate:
 
@@ -47,7 +47,7 @@ SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/install.sh
 
 If the menu bar icon is dimmed while QuitOnClose is turned on, macOS no longer trusts it for Accessibility. This can happen even when System Settings still shows it switched on. Choose **Reset Permission and Ask Again** from its menu, then allow it again. QuitOnClose notices within a couple of seconds when access is taken away or given back, and sets up its window tracking again after the Mac wakes from sleep.
 
-To build without installing, run `./scripts/build.sh`. The app goes to `build/QuitOnClose.app`.
+To build without installing, run `./scripts/build.sh`. The app goes to `build/QuitOnClose.app`, where Spotlight lists it as a second copy until you install or delete it.
 
 ## Uninstall
 
