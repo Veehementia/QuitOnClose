@@ -51,18 +51,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             recentlyQuit = Array(recentlyQuit.prefix(Self.recentLimit))
         }
 
-        // Asks for Accessibility access the first time, then waits until it's given.
-        if AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary) {
-            watcher.start()
-        } else {
-            trustTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
-                guard AXIsProcessTrusted() else { return }
-                timer.invalidate()
-                MainActor.assumeIsolated {
-                    self?.watcher.start()
-                    self?.updateIcon()
-                }
+        // Asks for Accessibility access the first time. macOS can also take the access away later,
+        // so keep checking, and start or stop watching to match.
+        askForAccess()
+        updateAccess()
+        trustTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateAccess() }
+        }
+        // Observers can go quiet while the Mac sleeps, so start over on wake: the timer above
+        // sets them up again.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.watcher.stop()
+                self?.updateIcon()
             }
+        }
+    }
+
+    private func askForAccess() {
+        AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+    }
+
+    private func updateAccess() {
+        let trusted = AXIsProcessTrusted()
+        if trusted && !watcher.isRunning {
+            watcher.start()
+        } else if !trusted && watcher.isRunning {
+            watcher.stop()
         }
         updateIcon()
     }
@@ -93,6 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             warning.isEnabled = false
             menu.addItem(warning)
             menu.addItem(item(NSLocalizedString("Allow in System Settings…", comment: "Menu item"), #selector(openAccessibilitySettings)))
+            let reset = item(NSLocalizedString("Reset Permission and Ask Again", comment: "Menu item"), #selector(resetAccess))
+            reset.toolTip = NSLocalizedString(
+                "Use this if QuitOnClose is already on in System Settings but still asks for access.",
+                comment: "Tooltip"
+            )
+            menu.addItem(reset)
             menu.addItem(.separator())
         }
 
@@ -158,6 +181,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openAccessibilitySettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+    }
+
+    /// macOS can keep showing the app as allowed while no longer trusting it, and then never asks
+    /// again. Clearing the entry lets the app ask afresh.
+    @objc private func resetAccess() {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        let reset = Process()
+        reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        reset.arguments = ["reset", "Accessibility", id]
+        try? reset.run()
+        reset.waitUntilExit()
+        askForAccess()
     }
 
     @objc private func toggleOpenAtLogin() {

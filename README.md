@@ -45,6 +45,8 @@ The app is signed ad-hoc, so macOS treats every new build as a different app. Th
 SIGN_IDENTITY="Apple Development: Your Name (TEAMID)" ./scripts/install.sh
 ```
 
+If the menu bar icon is dimmed while QuitOnClose is turned on, macOS no longer trusts it for Accessibility. This can happen even when System Settings still shows it switched on. Choose **Reset Permission and Ask Again** from its menu, then allow it again. QuitOnClose notices within a couple of seconds when access is taken away or given back, and sets up its window tracking again after the Mac wakes from sleep.
+
 To build without installing, run `./scripts/build.sh`. The app goes to `build/QuitOnClose.app`.
 
 ## Uninstall

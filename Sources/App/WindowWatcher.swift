@@ -1,5 +1,8 @@
 import AppKit
 import ApplicationServices
+import os
+
+private let log = Logger(subsystem: "com.matteonardone.QuitOnClose", category: "watcher")
 
 /// Follows the windows of every regular app through the Accessibility API and quits an app
 /// once the last of its windows has closed.
@@ -40,14 +43,25 @@ final class WindowWatcher {
         })
 
         NSWorkspace.shared.runningApplications.forEach { watch($0) }
+        log.notice("Started watching windows")
+    }
+
+    func stop() {
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        workspaceObservers.removeAll()
+        apps.values.forEach { $0.stop() }
+        apps.removeAll()
+        log.notice("Stopped watching windows")
     }
 
     private func watch(_ app: NSRunningApplication, attempt: Int = 1) {
         let pid = app.processIdentifier
-        guard apps[pid] == nil, app.activationPolicy == .regular, pid != getpid(), !app.isTerminated else { return }
+        guard isRunning, apps[pid] == nil, app.activationPolicy == .regular, pid != getpid(), !app.isTerminated else { return }
         if let watched = WatchedApp(app: app, watcher: self) {
             apps[pid] = watched
-        } else if attempt < 10 {
+        } else if attempt == 10 {
+            log.error("Gave up watching \(app.name, privacy: .public)")
+        } else {
             // An app that has only just launched may not answer accessibility requests yet.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 MainActor.assumeIsolated { self?.watch(app, attempt: attempt + 1) }
@@ -56,7 +70,15 @@ final class WindowWatcher {
     }
 
     fileprivate func lastWindowClosed(in app: NSRunningApplication) {
-        guard shouldQuit(app), app.terminate() else { return }
+        guard shouldQuit(app) else {
+            log.info("Last window of \(app.name, privacy: .public) closed, but it's excluded or QuitOnClose is off")
+            return
+        }
+        guard app.terminate() else {
+            log.error("\(app.name, privacy: .public) refused to quit")
+            return
+        }
+        log.notice("Quit \(app.name, privacy: .public)")
         didQuit(app)
     }
 }
@@ -78,18 +100,33 @@ private final class WatchedApp {
 
     init?(app: NSRunningApplication, watcher: WindowWatcher) {
         var observer: AXObserver?
-        guard AXObserverCreate(app.processIdentifier, axCallback, &observer) == .success, let observer else { return nil }
+        let created = AXObserverCreate(app.processIdentifier, axCallback, &observer)
+        guard created == .success, let observer else {
+            log.debug("Can't observe \(app.name, privacy: .public) yet: \(created.rawValue)")
+            return nil
+        }
         self.app = app
         self.element = AXUIElementCreateApplication(app.processIdentifier)
         self.observer = observer
         self.watcher = watcher
 
-        let result = AXObserverAddNotification(observer, element, kAXWindowCreatedNotification as CFString, refcon)
-        guard result == .success || result == .notificationAlreadyRegistered,
-              let current = currentWindows() else { return nil }
+        // "Destroyed" is registered on the whole app as well as on each window: on macOS 27 a
+        // window's own registration never fires, while the app's fires for every window that closes.
+        for name in [kAXWindowCreatedNotification, kAXUIElementDestroyedNotification] {
+            let result = AXObserverAddNotification(observer, element, name as CFString, refcon)
+            guard result == .success || result == .notificationAlreadyRegistered else {
+                log.debug("Can't observe \(app.name, privacy: .public) yet: \(result.rawValue)")
+                return nil
+            }
+        }
+        guard let current = currentWindows() else {
+            log.debug("Can't list the windows of \(app.name, privacy: .public) yet")
+            return nil
+        }
         // Common modes, so notifications still arrive while our menu is open.
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         current.forEach { track($0) }
+        log.info("Watching \(app.name, privacy: .public) with \(self.windows.count) windows")
     }
 
     func stop() {
@@ -102,7 +139,11 @@ private final class WatchedApp {
         case kAXWindowCreatedNotification:
             track(element)
         case kAXUIElementDestroyedNotification:
-            windows.removeAll { CFEqual($0, element) || !isAlive($0) }
+            // The app's registration fires for anything it removes, not just windows, so only a
+            // tracked window counts. Matching is enough here; the check before quitting looks harder.
+            guard let index = windows.firstIndex(where: { CFEqual($0, element) }) else { return }
+            windows.remove(at: index)
+            log.info("A window of \(self.app.name, privacy: .public) closed, \(self.windows.count) left")
             if windows.isEmpty { scheduleCheck() }
         default:
             break
@@ -117,7 +158,8 @@ private final class WatchedApp {
         if isRealWindow(window) && hasAttribute(window, kAXCloseButtonAttribute) {
             windows.append(window)
             pendingCheck?.cancel()
-            AXObserverAddNotification(observer, window, kAXUIElementDestroyedNotification as CFString, refcon)
+            let result = AXObserverAddNotification(observer, window, kAXUIElementDestroyedNotification as CFString, refcon)
+            log.info("Tracking a window of \(self.app.name, privacy: .public): \(result.rawValue)")
         } else if retry {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 MainActor.assumeIsolated { self?.track(window, retry: false) }
@@ -146,10 +188,15 @@ private final class WatchedApp {
     /// A window without a close button, like an alert, also keeps the app running here, so an
     /// app isn't quit while it's asking something. When the app doesn't answer, it's left alone.
     private func hasNoWindowsLeft() -> Bool {
-        guard let current = currentWindows() else { return false }
+        guard let current = currentWindows() else {
+            log.error("\(self.app.name, privacy: .public) didn't say which windows it has")
+            return false
+        }
         windows.removeAll { !isAlive($0) }
         current.forEach { track($0, retry: false) }
-        return windows.isEmpty && !current.contains(where: isRealWindow)
+        let empty = windows.isEmpty && !current.contains(where: isRealWindow)
+        log.info("\(self.app.name, privacy: .public) has \(self.windows.count) tracked and \(current.count) listed windows")
+        return empty
     }
 
     private func currentWindows() -> [AXUIElement]? {
@@ -184,4 +231,8 @@ private func axCallback(
     let watched = Unmanaged<WatchedApp>.fromOpaque(refcon).takeUnretainedValue()
     // The observer's run loop source is on the main run loop.
     MainActor.assumeIsolated { watched.handle(notification as String, for: element) }
+}
+
+private extension NSRunningApplication {
+    var name: String { localizedName ?? bundleIdentifier ?? "pid \(processIdentifier)" }
 }

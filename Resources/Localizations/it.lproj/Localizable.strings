@@ -1,6 +1,8 @@
 /* Status menu */
 "QuitOnClose needs Accessibility access" = "QuitOnClose richiede l'accesso Accessibilità";
 "Allow in System Settings…" = "Consenti in Impostazioni di Sistema…";
+"Reset Permission and Ask Again" = "Reimposta il permesso e chiedi di nuovo";
+"Use this if QuitOnClose is already on in System Settings but still asks for access." = "Usalo se QuitOnClose è già attivo in Impostazioni di Sistema ma chiede ancora l'accesso.";
 "Quit Apps When Their Last Window Closes" = "Esci dalle app quando chiudi l'ultima finestra";
 "Exclude “%@”" = "Escludi “%@”";
 "Excluded Apps…" = "App escluse…";
